@@ -47,7 +47,7 @@ data_transforms = {
         # transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
 }
-epochs = 50
+epochs = 30
 data_dir = 'dataset/train/'
 dataset = datasets.ImageFolder(data_dir,
                                data_transforms['train'])
@@ -73,7 +73,7 @@ funcs = {
     'VGG' : nn.MSELoss(),
     'MAE' : nn.L1Loss(),
 }
-loss_func = 'BCE'
+loss_func = 'MSE'
 criterion = funcs[loss_func]
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
@@ -95,7 +95,7 @@ for epoch in range(epochs):
         optimizer.step()
         
         loss_per_epoch += loss.item() * data.size(0) 
-        print('Batch idx {}, loss {}'.format(batch_idx, loss.item()))
+        print('Epoch {}, batch idx {}, loss {}'.format(epoch, batch_idx, loss.item()))
     loss_hist.append(loss_per_epoch/dataset_sizes)
 end = time.time() - start
 print("Finish in {:.0f}h:{:.0f}m:{:.0f}s".format(end//3600, end//60, end%60))
@@ -110,8 +110,10 @@ plt.ylabel('loss')
 plt.xlabel('epoch')
 plt.savefig('results/img/loss_{}_{}.png'.format(img_size, loss_func))
 
+
 '''
 VISUALIZE SOME RESULTS
+Follow the guide from this post: https://discuss.pytorch.org/t/visualize-feature-map/29597/7
 '''
 import math
 
@@ -122,9 +124,15 @@ def normalize_output(img):
     return img
 # data, _ = loader[0]
 # Plot random input/output of model
-idx = torch.randint(0, output.size(0), ())
-pred = normalize_output(output[idx, 0])
-img = data[idx, 0]
+vis_data, _ = next(iter(loader))
+vis_output = model(vis_data)
+
+idx = torch.randint(0, vis_output.size(0), ())
+
+
+pred = normalize_output(vis_output[idx, 0])
+img = vis_data[idx, 0]
+
 # print(img.size())
 fig, axarr = plt.subplots(1, 2)
 axarr[0].imshow(img.detach().numpy(), cmap='gray')
@@ -148,10 +156,8 @@ activation = {}
 layer_name = 'encoder'
 model.encoder.register_forward_hook(get_activation(layer_name))
 
-idx = torch.randint(0, dataset_sizes, ())
-data, target = dataset[idx]
-data.unsqueeze_(0)
-output = model(data)
+img = vis_data[idx]
+pred = model(img.unsqueeze(0))
 
 act = activation[layer_name].squeeze()
 print("Feature size: ", act.size())
@@ -171,3 +177,13 @@ for idx in range(num_layers):
 
 # plt.margins(0, 0)
 plt.savefig('results/img/layer_{}_{}_{}.png'.format(layer_name, img_size, loss_func))
+
+
+# # get filters maps
+# from torchvision.utils import make_grid
+
+# kernels = model.encoder['block3'].weight.detach().clone()
+# kernels = kernels - kernels.min()
+# kernels = kernels / kernels.max()
+# img = make_grid(kernels)
+# plt.imshow(img.permute(1, 2, 0))
