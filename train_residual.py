@@ -1,4 +1,6 @@
-  # extract feature from Water Crystal Dataset 
+'''
+LOAD LIBRARIES AND DATA
+'''
 import argparse
 import os
 import numpy as np
@@ -24,7 +26,7 @@ import time
 
 from model import MyModel
 
-img_size = (32, 32)
+img_size = (1024, 1024)
 # data transform
 data_transforms = {
     'train': transforms.Compose([
@@ -45,7 +47,7 @@ data_transforms = {
         # transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
 }
-epochs = 10
+epochs = 50
 data_dir = 'dataset/train/'
 dataset = datasets.ImageFolder(data_dir,
                                data_transforms['train'])
@@ -53,15 +55,37 @@ loader = torch.utils.data.DataLoader(dataset, batch_size=8,
                                              shuffle=True, num_workers=2)
 dataset_sizes = len(dataset)
 print("Dataset size: ", dataset_sizes)
+print("Number of epochs: ", epochs)
+
+
+'''
+START TRAINING THE MODEL
+'''
 
 start = time.time()
 
 model = MyModel()
-criterion = nn.BCEWithLogitsLoss()
-optimizer = optim.Adam(model.parameters(), lr=1e-3)
+print(str(model))
+
+funcs = {
+    'BCE' : nn.BCEWithLogitsLoss(),
+    'MSE' : nn.MSELoss(),
+    'VGG' : nn.MSELoss(),
+    'MAE' : nn.L1Loss(),
+}
+loss_func = 'BCE'
+criterion = funcs[loss_func]
+optimizer = optim.Adam(model.parameters(), lr=1e-4)
+
+# layer_name = 'encoder'
+# model.encoder.register_forward_hook(get_activation(layer_name))
 
 loss_hist = []
+
+print ("Start training model with {} images, size {}, in {} epochs, loss function {} ..."\
+       .format(dataset_sizes, img_size, epochs, loss_func))
 for epoch in range(epochs):
+    print("Epoch {} ...".format(epoch))
     loss_per_epoch = 0
     for batch_idx, (data, target) in enumerate(loader):
         optimizer.zero_grad()
@@ -71,29 +95,45 @@ for epoch in range(epochs):
         optimizer.step()
         
         loss_per_epoch += loss.item() * data.size(0) 
-        print('Epoch {}, Batch idx {}, loss {}'.format(
-            epoch, batch_idx, loss.item()))
+        print('Batch idx {}, loss {}'.format(batch_idx, loss.item()))
     loss_hist.append(loss_per_epoch/dataset_sizes)
 end = time.time() - start
-print("Finish in {:.0f}m:{:.0f}s".format(end//60, end%60))
+print("Finish in {:.0f}h:{:.0f}m:{:.0f}s".format(end//3600, end//60, end%60))
 
-def normalize_output(img):
-    img = img - img.min()
-    img = img / img.max()
-    # img = img * 255.
-    return img
-
-# Plot some images
-idx = torch.randint(0, output.size(0), ())
-pred = normalize_output(output[idx, 0])
-img = data[idx, 0]
+# save the model 
+torch.save(model.state_dict(), "results/models/encoder_{}_{}_{}.pth".format(img_size, epochs, loss_func))
 
 # plot loss history
 plt.plot(loss_hist)
 plt.title('model loss')
 plt.ylabel('loss')
 plt.xlabel('epoch')
-plt.savefig('autoencoder_{}_loss.png'.format(img_size))
+plt.savefig('results/img/loss_{}_{}.png'.format(img_size, loss_func))
+
+'''
+VISUALIZE SOME RESULTS
+'''
+import math
+
+def normalize_output(img):
+    # img = img - img.min()
+    # img = img / img.max()
+    img = img * 255.
+    return img
+# data, _ = loader[0]
+# Plot random input/output of model
+idx = torch.randint(0, output.size(0), ())
+pred = normalize_output(output[idx, 0])
+img = data[idx, 0]
+# print(img.size())
+fig, axarr = plt.subplots(1, 2)
+axarr[0].imshow(img.detach().numpy(), cmap='gray')
+axarr[0].title.set_text('Input')
+axarr[0].axis('off')
+axarr[1].imshow(pred.detach().numpy(), cmap='gray')
+axarr[1].title.set_text('Output')
+axarr[1].axis('off')
+plt.savefig('results/img/reconstruct_{}_{}.png'.format(img_size, loss_func))
 
 
 # Visualize feature maps
@@ -105,28 +145,29 @@ def get_activation(name):
 
 activation = {}
 
-layer_name = 'residual'
-model.residual.register_forward_hook(get_activation(layer_name))
+layer_name = 'encoder'
+model.encoder.register_forward_hook(get_activation(layer_name))
 
-data, _ = dataset[0]
+idx = torch.randint(0, dataset_sizes, ())
+data, target = dataset[idx]
 data.unsqueeze_(0)
 output = model(data)
 
 act = activation[layer_name].squeeze()
+print("Feature size: ", act.size())
 num_layers = act.size(0) 
-fig, axarr = plt.subplots(1, num_layers, figsize=(20,20))
+ncols = 6
+nrows = math.ceil(num_layers/ncols)
+
+fig, axs = plt.subplots(nrows, ncols, figsize=(15,15))
+idx = 0
 for idx in range(num_layers):
-    axarr[idx].imshow(act[idx], cmap='gray')
-    axarr[idx].axis('off')
-    axarr[idx].title.set_text('Layer {}'.format(idx))
+    x = idx // ncols
+    y = idx % ncols
+    axs[x, y].imshow(act[idx], cmap='gray')
+    axs[x, y].axis('off')
+    axs[x, y].title.set_text('Layer {}'.format(idx))
+#     idx += 1
 
-plt.savefig('layer_{}_{}.png'.format(layer_name, img_size))
-
-fig, axarr = plt.subplots(1, 2)
-axarr[0].imshow(data.detach().numpy(), cmap='gray')
-axarr[0].title.set_text('Input')
-axarr[0].axis('off')
-axarr[1].imshow(output.detach().numpy(), cmap='gray')
-axarr[1].title.set_text('Output')
-axarr[1].axis('off')
-plt.savefig('autoencoder_{}.png'.format(img_size))
+# plt.margins(0, 0)
+plt.savefig('results/img/layer_{}_{}_{}.png'.format(layer_name, img_size, loss_func))
