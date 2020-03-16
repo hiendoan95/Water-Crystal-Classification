@@ -5,26 +5,27 @@ import numpy as np
 import cv2
 import math
 
-class MyDataset(Dataset):
+class UnlabelDataset(Dataset):
 	def __init__(self, data_dir, transform=None, crop=True):
-		super(MyDataset, self).__init__()
-		# try:
-		self.data_dir, self.transform, self.crop = data_dir, transform, crop
-		filelist = [file for file in os.listdir(data_dir) if ".JPG" in file]
-		self.data = [Image.open(os.path.join(data_dir, fname)) for fname in filelist]
-		# except Exception:
-		# 	raise("Cannot find the folder...")
-		if self.crop:
-			self.data = [self.crop_object(img) for img in self.data]
+		super(UnlabelDataset, self).__init__()
+		self.filelist = [file for file in os.listdir(data_dir) if ".JPG" in file]
+		self.data_dir = data_dir
+		self.transform = transform
+		self.crop = crop
 
-		if self.transform is not None:
-			self.data = [self.transform(img) for img in self.data]
+		
 
 	def __len__(self):
-		return len(self.data)
+		return len(self.filelist)
 
 	def __getitem__(self, idx):
-		return self.data[idx]
+		img = Image.open(os.path.join(self.data_dir, self.filelist[idx]))
+		if self.crop:
+			img = self.crop_object(img)
+
+		if self.transform is not None:
+			img = self.transform(img)
+		return img
 
 	def crop_object(self, img):
 		cv_img = np.array(img)
